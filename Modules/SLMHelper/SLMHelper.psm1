@@ -963,6 +963,84 @@ Function Get-SLMApplications {
     return $result
 
 }
+Function Get-SLMApplicationDetails {
+    [CmdletBinding()]
+    param(
+        [hashtable]
+        $SLMApiEndpointConfiguration,
+        
+        [guid]
+        $Id,
+
+        [string]
+        $Name,
+
+        [string]
+        $filter,
+
+        [switch]
+        $ReturnSLMApplicationObjects
+    
+    )
+
+    #Work in progress, function not completed
+    Write-Warning "Work in progress"
+
+    #Remove the reference of the variable to the original parameter.
+    $SLMApiEndpointConfiguration = $SLMApiEndpointConfiguration.Clone()
+    
+
+    #If filter is empty, build filterArray
+    if ([string]::IsNullOrEmpty($filter)) {
+
+        $filterArray = @()
+
+        if ($Id) {
+            $filterArray += "(Id eq guid'$Id')"
+        }
+
+        if ($Name) {
+            $filterArray += "(Name eq '$Name')"
+        }    
+    }
+
+    #Inform that if we have a filter, it will override all other parameters
+    if ($filter) {
+        Write-Information "Filter is set, all other parameters will be ignored."
+    }
+
+    #Check if we got a filterArray
+    if ($filterArray.Count -gt 0) {
+        $filter = $filterArray -join " and "
+    }
+
+    #Build splatting object
+    $SLMApiEndpointConfiguration.SLMEndpointPath = 'applications/' + $Id
+    $SLMApiEndpointConfiguration.filter = ''
+
+    if ($filter) {
+        $SLMApiEndpointConfiguration.filter = $filter
+        Write-Information "Filter will be used: [$filter]"
+    }
+
+    $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
+
+    if ($ReturnSLMApplicationObjects) {
+        Write-Verbose "Will return SLMApplicationObjects"
+        $SLMApplicationObjects = @()
+        foreach ($resultApplication in $result) {
+            $table = @{}
+            $resultApplication.psobject.properties.name | ForEach-Object { $table.Add($_, $resultApplication.$_) }
+            $SLMApplicationObjects += New-SLMApplicationObject @table
+        }
+        
+        return $SLMApplicationObjects
+
+    }
+    Write-Information "Will return data in format: $($SLMApiEndpointConfiguration.format)"
+    return $result
+
+}
 #endregion
 
 #region SLM Import Functions

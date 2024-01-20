@@ -22,7 +22,7 @@ function ConvertTo-CustomFieldValueObject {
         $TargeType
     )
 
-    if ($CustomValues -eq $null) { return }
+    if ($null -eq $CustomValues) { return }
 
     if ($CustomValues.GetType() -eq [SLMCustomFieldValueObject] `
             -and $TargeType -eq 'SLMCustomFieldValueObject') {
@@ -524,6 +524,8 @@ Function New-SLMApiEndpointConfiguration {
     if ($OnlyFirstPage) { Write-Warning "OnlyFirstPage is set, will only retrieve first page of results." }
 
     if (-not $DontSetGlobal) {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', 'existModuleName',
+            Justification = 'variable is used in another scope')]
         $global:SLMApiEndpointConfiguration = $splat
     }
 

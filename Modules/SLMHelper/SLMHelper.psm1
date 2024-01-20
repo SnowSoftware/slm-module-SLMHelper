@@ -1,3 +1,60 @@
+#Requires -Modules ImportExcel
+
+#region Enums
+enum SLMObjectTypes {
+    SLMOrganisationObject
+    SLMUserObject
+    SLMComputerObject
+    SLMAgreementObject
+    SLMLicenseObject
+    SLMApplicationObject
+}
+#endregion
+
+#region Tools
+function ConvertTo-CustomFieldValueObject {
+    #Example:
+    #[SLMCustomFieldValueObject[]]$PSBoundParameters.CustomValues = ConvertTo-CustomFieldValueObject -CustomValues $CustomValues -TargeType SLMCustomFieldValueObject
+    param(
+        $CustomValues,
+
+        [ValidateSet('Object', 'SLMCustomFieldValueObject')]
+        $TargeType
+    )
+
+    if ($CustomValues -eq $null) { return }
+
+    if ($CustomValues.GetType() -eq [SLMCustomFieldValueObject] `
+            -and $TargeType -eq 'SLMCustomFieldValueObject') {
+        return $CustomValues
+    }
+
+    if ($CustomValues.GetType() -ne [SLMCustomFieldValueObject] `
+            -and $TargeType -eq 'SLMCustomFieldValueObject') {
+
+        [SLMCustomFieldValueObject[]]$NewCustomValues = @()
+        foreach ($CustomValue in $CustomValues) {
+            $returnObject = New-SLMCustomFieldValueObject -type $CustomValue.'$type' -Name $CustomValue.Name -DataType $CustomValue.DataType -Value $CustomValue.Value
+            $NewCustomValues += $returnObject
+        }
+
+
+        return $NewCustomValues
+    }
+
+    if ($CustomValues.GetType() -eq [Object[]] `
+            -and $TargeType -eq 'Object') {
+        return $CustomValues
+    }
+
+    if ($CustomValues.GetType() -ne [Object[]] `
+            -and $TargeType -eq 'Object') {
+        return [Object]$CustomValues
+    }
+
+}
+#endregion
+
 #region Classes
 class SLMOrganisationObject {
     [String]$Organisation
@@ -26,7 +83,7 @@ class SLMUserObject {
     [String]$QuarantineDeleteDate
     [String]$UpdatedDate
     [String]$UpdatedBy
-    [hashtable]$CustomFields
+    [SLMCustomFieldValueObject[]]$CustomFields
 }
 class SLMComputerObject {
 
@@ -58,6 +115,7 @@ class SLMComputerObject {
     [ValidateSet('YES', 'NO', 'false', 'true')][String]$IsServer
     [Int32]$MostFrequentUserId
     [Int32]$MostRecentUserId
+    [SLMCustomFieldValueObject[]]$CustomFields
     [bool]$Validated
 
     [bool] Validate() {
@@ -96,21 +154,49 @@ class SLMComputerObject {
         
     }
 }
-class SLMComputerImportObject {
-    [String]$ComputerName
-    [String]$BiosSerialNumber	
-    [SLMOrganisationObject]$Organisation	
-    [String]$PurchaseValue	
-    [String]$PurchaseDate	
-    [String]$PurchaseCurrency	
-    [String]$InvoiceReference	
-    [String]$Notes	
-    [String]$SecurityCode	
-    [String]$Vendor	
-    [ValidateSet('YES', 'NO')][String]$DisableAutoEditing	
-    [String]$HostComputerName	
-    [String]$PVUPerCore
-    [hashtable]$CustomFields
+class SLMImportObject {
+    $SLMObject
+    [SLMObjectTypes]$SLMObjectType
+    [nullable[boolean]]$DisableAutoEditing
+    [boolean]$Valid = $false
+
+
+    [bool] Validate() {
+
+        $isValid = $true
+
+        switch ($this.SLMObjectType) {
+            'SLMLicenseObject' {
+                if (
+                    ( [string]::IsNullOrEmpty($this.SLMObject.ApplicationName) `
+                        -and [string]::IsNullOrEmpty($this.SLMObject.SKU) ) `
+                        -or [string]::IsNullOrEmpty($this.SLMObject.LegalOrganisation) `
+                        -or [string]::IsNullOrEmpty($this.SLMObject.PurchaseDate) `
+                        -or [string]::IsNullOrEmpty($this.SLMObject.AssignmentType) `
+                ) {
+                    Write-Information "SLMLicenseObject does not have all required fields (ApplicationName or SKU, LegalOrganisation, PurchaseDate, AssignmentType" 
+                    $isValid = $false
+                }
+                $this.Valid = $isValid
+                return $isValid
+            }
+            Default {
+                Write-Warning "Object is not an SLMObject, skipping."
+                Write-Debug "Object: $this.SLMObject"
+                $isValid = $false
+                $this.Valid = $isValid
+                return $false
+            }
+        }
+
+        $isValid = $false
+        $this.Valid = $isValid
+        return $false
+    }
+
+
+
+
 }
 class SLMAgreementObject {
     [String]$Id
@@ -148,10 +234,55 @@ class SLMAgreementObject {
     [String]$UpdatedDat
     [String]$Description
     [String]$AgreementPeriod
-    [String]$CustomField
+    [String]$CustomFields
     [String]$RestrictedToRole
 }
 Class SLMLicenseObject {
+
+    #SLM API fields + shared
+    [Int32]$Id
+    [String]$ApplicationName
+    [String]$ManufacturerName
+    [String]$Metric
+    [String]$AssignmentType
+    [String]$UpdatedDate
+    [String]$UpdatedBy
+    [nullable[Boolean]]$AutomaticDowngrade # Is this equal to Downgrade rights in import?
+    [nullable[Boolean]]$UpgradeRights
+    [String]$InvoiceReference
+    [String]$PurchaseDate
+    [nullable[decimal]]$PurchasePrice
+    [String]$PurchaseCurrency
+    [Int32]$Quantity
+    [String]$Vendor
+    [String]$ExternalId
+    [String]$InstallationMedia
+    [String]$LicenseProofLocation
+    [String]$LicenseKeys
+    [String]$Notes
+    [nullable[Boolean]]$IsIncomplete
+    [SLMCustomFieldValueObject[]]$CustomFields
+    [object[]]$Allocations
+
+    #SLM License Import Template only
+    [string]$SKU
+    [string]$LegalOrganisation
+    [nullable[Boolean]]$IsUpgrade 
+    [Int32]$UpgradeFromLicenseID
+    [String]$BaseLicenseQuantityToUpgrade
+    [String]$SubscriptionValidFrom
+    [String]$SubscriptionValidTo
+    [nullable[Boolean]]$IsSubscription
+    [String]$CrossEditionRights
+    [String]$DowngradeRights # Is this equal to AutomaticDowngrade rights in API?
+    [nullable[Boolean]]$AutoAllocate
+    [nullable[Boolean]]$MaintenanceIncludesUpgradeRights
+    [nullable[Boolean]]$MaintenanceAccordingToAgreement
+    [String]$MaintenanceAndSupportValidFrom
+    [String]$MaintenanceAndSupportValidTo
+    [String]$AgreementNumber
+    [String]$ProductDescription
+
 }
 Class SLMApplicationObject {
     [Guid]$Id      #Guid	The id of the application.
@@ -160,7 +291,7 @@ Class SLMApplicationObject {
     [String]$ManufacturerName        #String	The name of the application's manufacturer.
     [String]$ManufacturerWebsite         #String	The URL of the manufacturer's website.
     [String]$LanguageName        #String	The name of the application's language.
-    [DateTime]$ReleaseDate         #DateTime-Nullable	The application's release date.
+    [Nullable[DateTime]]$ReleaseDate         #DateTime-Nullable	The application's release date.
     [DateTime]$CreatedDate         #DateTime	The date and time at which the application was created.
     [String]$CreatedBy       #String	The name of the user that created the application.
     [DateTime]$UpdatedDate         #DateTime	The date/time at which the application was last updated.
@@ -196,19 +327,27 @@ Class SLMApplicationObject {
     [Decimal]$LicenseCostTotal        #Decimal	Calculated total value based on all license purchases registered for this application.
     [String]$LicenseCostCurrency         #String	The currency used for the license cost.
     [Decimal]$UserLicenseCost         #Decimal-Nullable	The per-user license cost for the application.
-    [Boolean]$AlertOnOverlicensing        #Boolean-Nullable	Alert when application is overlicensed (show in overlicensed collection).
-    [Boolean]$AlertOnUnderlicensing       #Boolean-Nullable	Alert when application is underlicensed (show in underlicensed collection).
-    [Boolean]$AlertWhenNotUsed        #Boolean-Nullable	Alert when application is not used.
-    [SLMCustomFieldsObject]$CustomValues        #Array-of-CustomFieldValue	An array of custom values for the application.
-    [Boolean]$SecondaryUseAllowed         #Boolean-Nullable	Allow secondary use.
-    [Boolean]$MultipleVersionsAllowed         #Boolean-Nullable	Allow multiple versions.
-    [Boolean]$MultipleEditionsAllowed         #Boolean-Nullable	Allow multiple editions.
+    [Nullable[Boolean]]$AlertOnOverlicensing        #Boolean-Nullable	Alert when application is overlicensed (show in overlicensed collection).
+    [Nullable[Boolean]]$AlertOnUnderlicensing       #Boolean-Nullable	Alert when application is underlicensed (show in underlicensed collection).
+    [Nullable[Boolean]]$AlertWhenNotUsed        #Boolean-Nullable	Alert when application is not used.
+    [SLMCustomFieldValueObject[]]$CustomValues        #Array-of-CustomFieldValue	An array of custom values for the application.
+    [Nullable[Boolean]]$SecondaryUseAllowed         #Boolean-Nullable	Allow secondary use.
+    [Nullable[Boolean]]$MultipleVersionsAllowed         #Boolean-Nullable	Allow multiple versions.
+    [Nullable[Boolean]]$MultipleEditionsAllowed         #Boolean-Nullable	Allow multiple editions.
 }
-Class SLMCustomFieldsObject {
-    #https://demo.snowsoftware.com/api/customers/1/sim/customfields/definitions
-
+Class SLMCustomFieldValueObject {
+    #https://demo.snowsoftware.com/api/customers/1/sim/customfields/applications
+    #https://demo.snowsoftware.com/api/customers/1/applications/{applicationId}
+    [String]$type
+    [String]$Name
+    [Int32]$CustomFieldId
+    [String]$DataType
+    [String]$ElementId
+    [String]$Value
+    [String]$UpdatedDate
 }
 Class SLMCustomFieldDefinitionObject {
+    #https://demo.snowsoftware.com/api/customers/1/sim/customfields/definitions
     [String]$type
     [Int32]$CustomFieldId
     [Int32]$CategoryId
@@ -346,7 +485,6 @@ Function New-SLMApiEndpointConfiguration {
         [System.Management.Automation.PSCredential]
         $SLMApiCredentials,
 
-        [Parameter(Mandatory)]
         [string]
         $SLMEndpointPath,
 
@@ -393,7 +531,7 @@ Function New-SLMApiEndpointConfiguration {
 }
 #endregion
 
-#region Read and Validate objects from SLM 
+#region Computer functions
 Function New-SLMComputerObject {
     param(
         [String]$type,
@@ -582,6 +720,8 @@ Function Get-SLMComputers {
     return $result
 
 }
+#endregion
+#region User functions
 Function New-SLMUserObject {
     param(
         [Int32]$Id,
@@ -712,12 +852,19 @@ Function Get-SLMUsers {
     Write-Information "Will return data in format: $($SLMApiEndpointConfiguration.format)"
     return $result
 }
-Function Get-SLMOrganisation {
+#endregion
+#region Organisation functions
+Function New-SLMOrganisationObject {
+
+}
+Function Get-SLMOrganisations {
     param(
         $OrgChecksum,
         $Organisation
     )
 }
+#endregion
+#region Custom Field and values functions
 Function New-SLMCustomFieldDefinitionObject {
     param(
         [String]$type,
@@ -759,6 +906,15 @@ Function Get-SLMCustomFieldDefinitions {
         [bool]
         $IsMandatory,
 
+        # 1 User
+        # 2 Computer/Mobile device
+        # 3 License
+        # 4 Agreement
+        # 5 Application
+        [Validateset('User', 'Computer', 'License', 'Agreement', 'Application')]
+        [String]
+        $ObjectType,
+
         [string]
         $filter,
 
@@ -780,6 +936,21 @@ Function Get-SLMCustomFieldDefinitions {
         if ($CategoryId) {
             $filterArray += "(CategoryId eq $CategoryId)"
         }
+
+        # 1 User
+        # 2 Computer/Mobile device
+        # 3 License
+        # 4 Agreement
+        # 5 Application
+        switch ($ObjectType) {
+            'User' { $filterArray += "(CategoryId eq 1)" }
+            'Computer' { $filterArray += "(CategoryId eq 2)" }
+            'License' { $filterArray += "(CategoryId eq 3)" }
+            'Agreement' { $filterArray += "(CategoryId eq 4)" }
+            'Application' { $filterArray += "(CategoryId eq 5)" }
+            Default {}
+        }
+        
 
         if ($ValueDataTypeId) {
             $filterArray += "(ValueDataTypeId eq $ValueDataTypeId)"
@@ -831,6 +1002,43 @@ Function Get-SLMCustomFieldDefinitions {
     Write-Information "Will return data in format: $($SLMApiEndpointConfiguration.format)"
     return $result
 }
+Function New-SLMCustomFieldValueObject {
+    param(
+        [String]$type,
+        [String]$Name,
+        [Int32]$CustomFieldId,
+        [String]$DataType,
+        [String]$ElementId,
+        [String]$Value,
+        [String]$UpdatedDate
+    )
+
+    $SLMCustomFieldValueObject = New-Object -TypeName SLMCustomFieldValueObject -Property $PSBoundParameters
+
+    return $SLMCustomFieldValueObject
+
+
+}
+Function Get-SLMCustomFieldValues {
+    param(
+        
+        [Int32]
+        $CustomFieldId,
+
+        [String]
+        $ElementId,
+
+        [String]
+        $Value,
+
+        [String]
+        $UpdatedDate
+
+    )
+
+}
+#endregion
+#region Application functions
 Function New-SLMApplicationObject {
     param(
         [Guid]$Id,
@@ -839,7 +1047,7 @@ Function New-SLMApplicationObject {
         [String]$ManufacturerName,
         [String]$ManufacturerWebsite,
         [String]$LanguageName,
-        [DateTime]$ReleaseDate,
+        [Nullable[DateTime]]$ReleaseDate,
         [DateTime]$CreatedDate,
         [String]$CreatedBy,
         [DateTime]$UpdatedDate,
@@ -878,12 +1086,14 @@ Function New-SLMApplicationObject {
         [Boolean]$AlertOnOverlicensing,
         [Boolean]$AlertOnUnderlicensing,
         [Boolean]$AlertWhenNotUsed,
-        [SLMCustomFieldsObject]$CustomValues,
+        $CustomValues,
         [Boolean]$SecondaryUseAllowed,
-        [Boolean]$MultipleVersionsAllowed,
-        [Boolean]$MultipleEditionsAllowed
+        [Nullable[Boolean]]$MultipleVersionsAllowed,
+        [Nullable[Boolean]]$MultipleEditionsAllowed
     )
 
+    
+    [SLMCustomFieldValueObject[]]$PSBoundParameters.CustomValues = ConvertTo-CustomFieldValueObject -CustomValues $CustomValues -TargeType SLMCustomFieldValueObject
     $SLMApplication = New-Object -TypeName SLMApplicationObject -Property $PSBoundParameters
 
     return $SLMApplication
@@ -905,7 +1115,10 @@ Function Get-SLMApplications {
         $filter,
 
         [switch]
-        $ReturnSLMApplicationObjects
+        $ReturnSLMApplicationObjects,
+
+        [switch]
+        $IncludeApplicationDetails #TODO include details for all applications
     )
 
     #Remove the reference of the variable to the original parameter.
@@ -1042,16 +1255,150 @@ Function Get-SLMApplicationDetails {
 
 }
 #endregion
+#region License functions
+Function Get-SLMLicenseDetails {
+    [CmdletBinding()]
+    param(
+        [hashtable]
+        $SLMApiEndpointConfiguration,
+        
+        [Int32]
+        $Id,
+
+        [switch]
+        $ReturnAsSLMObject
+    
+    )
+
+    #Remove the reference of the variable to the original parameter.
+    $SLMApiEndpointConfiguration = $SLMApiEndpointConfiguration.Clone()
+
+    #Build splatting object
+    $SLMApiEndpointConfiguration.SLMEndpointPath = 'licenses/' + $Id
+    $SLMApiEndpointConfiguration.filter = ''
+
+    if ($filter) {
+        $SLMApiEndpointConfiguration.filter = $filter
+        Write-Information "Filter will be used: [$filter]"
+    }
+
+    $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
+
+    if ($ReturnAsSLMObject) {
+        Write-Verbose "Will return SLMLicenseObject"
+        $SLMObjects = @()
+        foreach ($resultRow in $result) {
+            $table = @{}
+            $resultRow.psobject.properties.name | ForEach-Object { $table.Add($_, $resultRow.$_) }
+            $SLMObjects += New-SLMLicenseObject @table
+        }
+        
+        return $SLMObjects
+
+    }
+    Write-Information "Will return data in format: $($SLMApiEndpointConfiguration.format)"
+    return $result
+
+}
+Function New-SLMLicenseObject {
+    param(
+        [Int32]$Id,
+        [String]$ApplicationName,
+        [String]$ManufacturerName,
+        [String]$Metric,
+        [String]$AssignmentType,
+        [String]$UpdatedDate,
+        [String]$UpdatedBy,
+        [nullable[Boolean]]$AutomaticDowngrade,
+        [nullable[Boolean]]$UpgradeRights,
+        [String]$InvoiceReference,
+        [String]$PurchaseDate,
+        [nullable[decimal]]$PurchasePrice,
+        [String]$PurchaseCurrency,
+        [Int32]$Quantity,
+        [String]$Vendor,
+        [String]$ExternalId,
+        [String]$InstallationMedia,
+        [String]$LicenseProofLocation,
+        [String]$LicenseKeys,
+        [String]$Notes,
+        [nullable[Boolean]]$IsIncomplete,
+        $CustomFields,
+        [object[]]$Allocations,
+        [String]$LegalOrganisation
+    )
+    [SLMCustomFieldValueObject[]]$PSBoundParameters.CustomFields = ConvertTo-CustomFieldValueObject -CustomValues $CustomFields -TargeType SLMCustomFieldValueObject
+    $SLMObject = New-Object -TypeName SLMLicenseObject -Property $PSBoundParameters
+
+    return $SLMObject
+
+}
+#endregion
 
 #region SLM Import Functions
-Function Export-SLMImportCSV {
+Function New-SLMImport {
     param(
-        $ImportObjects
+        $ImportObjects,
+        $LicenseDirectoryPath,
+        [switch]$Append,
+        $Encoding,
+        [switch]$IncludeInvalid,
+        [String]$Label
     )
-}
-Function New-SLMComputerImportObject {
-    param(
 
+    [String]$Prefix = Get-Date -Format FileDateTime
+    if (-not [string]::IsNullOrEmpty($Label)) { $Prefix = $Prefix + '_' + $Label }
+    $Prefix = $Prefix + '_'
+
+    $SLMImportObjects = @()
+
+    foreach ($ImportObject in $ImportObjects) {
+
+        if ($ImportObject.SLMObjectType -notin [Enum]::GetNames([slmobjectTypes])) {
+            Write-Information "Object is not an SLMObject, skipping. Skipped object: $SLMObject"
+            continue
+        }
+
+        if ($ImportObject.Validate() -or $IncludeInvalid) {
+            $SLMImportObjects += $ImportObject 
+        }
+    }
+
+    if ($SLMImportObjects.SLMObject.Count -gt 0) {
+
+        $licenses = Where-Object -InputObject $SLMImportObjects -FilterScript { $_.SLMObjectType -eq 'SLMLicenseObject' }
+        $licenses.SLMObject | Export-Excel -Path "$LicenseDirectoryPath\$($Prefix)License.xlsx" -Append:$Append
+
+    }
+
+}
+Function New-SLMImportObjects {
+    [CmdletBinding()]
+    param(
+        $SLMObjects,
+        [nullable[boolean]]$DisableAutoEditing
     )
+    $ImportObjects = @()
+
+    foreach ($SLMObject in $SLMObjects) {
+        if ($SLMObject.GetType().Name -notin [Enum]::GetNames([slmobjectTypes])) {
+            Write-Information "Object is not an SLMObject, skipping. Skipped object: $SLMObject"
+            continue
+        }
+        $ImportTable = @{
+            SLMObjectType      = [SLMObjectTypes]"$($SLMObject.GetType().Name)"
+            SLMObject          = $SLMObject
+            DisableAutoEditing = $DisableAutoEditing
+        }
+
+        $ImportObjects += New-Object -TypeName SLMImportObject -Property $ImportTable
+    }
+
+    if ($SLMObjects.Count -ne $ImportObjects.Count) {
+        Write-Warning "Some objects skipped, $($importobject.Count) ImportObjects created from $($SLMObjects.Count) SLMObjects."
+    }
+
+    return $ImportObjects
+
 }
 #endregion

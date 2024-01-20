@@ -23,7 +23,7 @@ Add the "SLMHelper"-folder to your modules folder, or import directly.
 How to read SLM Application details for 0001378A-704F-4583-BCB8-2D24E1E720E3
 
 ``` powershell
-Import-Module "C:\Repos\SnowSoftware Repos\slm-module-SLMHelper\Modules\SLMHelper\SLMHelper.psm1"
+Import-Module "C:\Repos\SnowSoftware Repos\slm-module-SLMHelper\Modules\SLMHelper\SLMHelper.psd1"
 
 if (-not $creds) {
     $creds = Get-Credential

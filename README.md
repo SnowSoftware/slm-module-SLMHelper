@@ -36,5 +36,3 @@ $SLMapp = Get-SLMApplicationDetails -SLMApiEndpointConfiguration $SLMApiEndpoint
 ## Repository
 This module is maintained in the GitHub Repository found [here](https://github.com/SnowSoftware/slm-module-SLMHelper).  
 Please use GitHub issue tracker if you have any issues with the module. 
-
-Test :)

@@ -79,9 +79,9 @@ class SLMUserObject {
     [String]$RoomNumber
     [ValidateSet('Active', 'Quarantined')][String]$StatusCode
     [String]$QuarantineManagement
-    [String]$QuarantineDate
-    [String]$QuarantineDeleteDate
-    [String]$UpdatedDate
+    [nullable[datetime]]$QuarantineDate
+    [nullable[datetime]]$QuarantineDeleteDate
+    [nullable[datetime]]$UpdatedDate
     [String]$UpdatedBy
     [SLMCustomFieldValueObject[]]$CustomFields
 }
@@ -99,9 +99,9 @@ class SLMComputerObject {
     [ValidateSet('YES', 'NO', 'false', 'true')][String]$IsVirtual
     [String]$Status
     [String]$IpAddresses
-    [String]$LastScanDate
+    [nullable[datetime]]$LastScanDate
     [String]$UpdatedBy
-    [String]$UpdatedDate
+    [nullable[datetime]]$UpdatedDate
     [String]$Domain
     [Int32]$TotalDiskSpace
     [Int32]$PhysicalMemory
@@ -154,50 +154,6 @@ class SLMComputerObject {
         
     }
 }
-class SLMImportObject {
-    $SLMObject
-    [SLMObjectTypes]$SLMObjectType
-    [nullable[boolean]]$DisableAutoEditing
-    [boolean]$Valid = $false
-
-
-    [bool] Validate() {
-
-        $isValid = $true
-
-        switch ($this.SLMObjectType) {
-            'SLMLicenseObject' {
-                if (
-                    ( [string]::IsNullOrEmpty($this.SLMObject.ApplicationName) `
-                        -and [string]::IsNullOrEmpty($this.SLMObject.SKU) ) `
-                        -or [string]::IsNullOrEmpty($this.SLMObject.LegalOrganisation) `
-                        -or [string]::IsNullOrEmpty($this.SLMObject.PurchaseDate) `
-                        -or [string]::IsNullOrEmpty($this.SLMObject.AssignmentType) `
-                ) {
-                    Write-Information "SLMLicenseObject does not have all required fields (ApplicationName or SKU, LegalOrganisation, PurchaseDate, AssignmentType" 
-                    $isValid = $false
-                }
-                $this.Valid = $isValid
-                return $isValid
-            }
-            Default {
-                Write-Warning "Object is not an SLMObject, skipping."
-                Write-Debug "Object: $this.SLMObject"
-                $isValid = $false
-                $this.Valid = $isValid
-                return $false
-            }
-        }
-
-        $isValid = $false
-        $this.Valid = $isValid
-        return $false
-    }
-
-
-
-
-}
 class SLMAgreementObject {
     [String]$Id
     [String]$MasterId
@@ -229,9 +185,9 @@ class SLMAgreementObject {
     [String]$LocalContactPhone
     [String]$LocalContactEmail
     [String]$CreatedBy
-    [String]$CreatedDate
+    [nullable[datetime]]$CreatedDate
     [String]$UpdatedBy
-    [String]$UpdatedDat
+    [nullable[datetime]]$UpdatedDate
     [String]$Description
     [String]$AgreementPeriod
     [String]$CustomFields
@@ -244,13 +200,14 @@ Class SLMLicenseObject {
     [String]$ApplicationName
     [String]$ManufacturerName
     [String]$Metric
+    [ValidateSet('Organisation', 'Computer/datacenter', 'User', 'Site')]
     [String]$AssignmentType
-    [String]$UpdatedDate
+    [nullable[datetime]]$UpdatedDate
     [String]$UpdatedBy
     [nullable[Boolean]]$AutomaticDowngrade # Is this equal to Downgrade rights in import?
     [nullable[Boolean]]$UpgradeRights
     [String]$InvoiceReference
-    [String]$PurchaseDate
+    [nullable[datetime]]$PurchaseDate
     [nullable[decimal]]$PurchasePrice
     [String]$PurchaseCurrency
     [Int32]$Quantity
@@ -291,10 +248,10 @@ Class SLMApplicationObject {
     [String]$ManufacturerName        #String	The name of the application's manufacturer.
     [String]$ManufacturerWebsite         #String	The URL of the manufacturer's website.
     [String]$LanguageName        #String	The name of the application's language.
-    [Nullable[DateTime]]$ReleaseDate         #DateTime-Nullable	The application's release date.
-    [DateTime]$CreatedDate         #DateTime	The date and time at which the application was created.
+    [nullable[datetime]]$ReleaseDate         #DateTime-Nullable	The application's release date.
+    [nullable[datetime]]$CreatedDate         #DateTime	The date and time at which the application was created.
     [String]$CreatedBy       #String	The name of the user that created the application.
-    [DateTime]$UpdatedDate         #DateTime	The date/time at which the application was last updated.
+    [nullable[datetime]]$UpdatedDate         #DateTime	The date/time at which the application was last updated.
     [String]$UpdatedBy       #String	The name of the user that updated the application.
     [String]$Description         #String	Custom description of the application.
     [String]$SystemOwnerName         #String	Name of the system owner of the application.
@@ -344,7 +301,7 @@ Class SLMCustomFieldValueObject {
     [String]$DataType
     [String]$ElementId
     [String]$Value
-    [String]$UpdatedDate
+    [nullable[datetime]]$UpdatedDate
 }
 Class SLMCustomFieldDefinitionObject {
     #https://demo.snowsoftware.com/api/customers/1/sim/customfields/definitions
@@ -357,8 +314,66 @@ Class SLMCustomFieldDefinitionObject {
     [bool]$IsMandatory
     [String]$DefaultValue
     [String]$MultipleChoice
-    [String]$CreatedDate
-    [String]$UpdatedDate
+    [nullable[datetime]]$CreatedDate
+    [nullable[datetime]]$UpdatedDate
+}
+class SLMImportObject {
+    $SLMObject
+    [SLMObjectTypes]$SLMObjectType
+    [nullable[boolean]]$DisableAutoEditing
+    [boolean]$Valid = $false
+
+
+    [bool] Validate() {
+
+        $isValid = $true
+
+        if (-not $global:SLMApiEndpointConfiguration) {
+            Write-Error "Global SLMApiEndpointConfiguration not set, please set using New-SLMApiEndpointConfiguration."
+            return $null
+        }
+
+        switch ($this.SLMObjectType) {
+            'SLMLicenseObject' {
+
+                if ( -not [string]::IsNullOrEmpty($this.SLMObject.ApplicationName)) {
+                    $SLMApplication = Get-SLMApplications -SLMApiEndpointConfiguration $global:SLMApiEndpointConfiguration -Name $this.SLMObject.ApplicationName -ReturnSLMApplicationObjects
+                    if ($SLMApplication.Count -le 0) {
+                        Write-Information "ApplicationName [$($this.SLMObject.ApplicationName)] does not exist in SLM API (inventoried data), could still exist in global catalog." 
+                    }
+                }
+
+                if (
+                    ( [string]::IsNullOrEmpty($this.SLMObject.ApplicationName) `
+                        -and [string]::IsNullOrEmpty($this.SLMObject.SKU) ) `
+                        -or [string]::IsNullOrEmpty($this.SLMObject.LegalOrganisation) `
+                        -or [string]::IsNullOrEmpty($this.SLMObject.PurchaseDate) `
+                        -or [string]::IsNullOrEmpty($this.SLMObject.AssignmentType) `
+                        -or ($this.SLMObject.Quantity -le 0) `
+                ) {
+                    Write-Information "SLMLicenseObject does not have all required fields (ApplicationName or SKU, LegalOrganisation, PurchaseDate, AssignmentType, Quantity > 0)" 
+                    $isValid = $false
+                }
+                $this.Valid = $isValid
+                return $isValid
+            }
+            Default {
+                Write-Warning "Object is not an SLMObject, skipping."
+                Write-Debug "Object: $this.SLMObject"
+                $isValid = $false
+                $this.Valid = $isValid
+                return $false
+            }
+        }
+
+        $isValid = $false
+        $this.Valid = $isValid
+        return $false
+    }
+
+
+
+
 }
 #endregion
 
@@ -548,9 +563,9 @@ Function New-SLMComputerObject {
         [ValidateSet('YES', 'NO', 'false', 'true')][String]$IsVirtual,
         [String]$Status,
         [String]$IpAddresses,
-        [String]$LastScanDate,
+        [nullable[datetime]]$LastScanDate,
         [String]$UpdatedBy,
-        [String]$UpdatedDate,
+        [nullable[datetime]]$UpdatedDate,
         [String]$Domain,
         [Int32]$TotalDiskSpace,
         [Int32]$PhysicalMemory,
@@ -707,7 +722,7 @@ Function Get-SLMComputers {
     $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
 
     if ($ReturnSLMComputerObjects) {
-        Write-Verbose "Will return SLMComputerObjects"
+        Write-Information "Will return SLMComputerObjects"
         $SlmComputerObjects = @()
         foreach ($resultComputer in $result) {
             $table = @{}
@@ -743,9 +758,9 @@ Function New-SLMUserObject {
         [String]$RoomNumber,
         [ValidateSet('Active', 'Quarantined')][String]$StatusCode,
         [String]$QuarantineManagement,
-        [String]$QuarantineDate,
-        [String]$QuarantineDeleteDate,
-        [String]$UpdatedDate,
+        [nullable[datetime]]$QuarantineDate,
+        [nullable[datetime]]$QuarantineDeleteDate,
+        [nullable[datetime]]$UpdatedDate,
         [String]$UpdatedBy,
         [hashtable]$CustomFields
     )
@@ -840,7 +855,7 @@ Function Get-SLMUsers {
     $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
 
     if ($ReturnSLMUserObjects) {
-        Write-Verbose "Will return ReturnSLMUserObjects"
+        Write-Information "Will return ReturnSLMUserObjects"
         $SlmUserObjects = @()
         foreach ($resultUser in $result) {
             $table = @{}
@@ -878,8 +893,8 @@ Function New-SLMCustomFieldDefinitionObject {
         [bool]$IsMandatory,
         [String]$DefaultValue,
         [String]$MultipleChoice,
-        [String]$CreatedDate,
-        [String]$UpdatedDate
+        [nullable[datetime]]$CreatedDate,
+        [nullable[datetime]]$UpdatedDate
     )
 
     $SLMCustomFieldDefinitionObject = New-Object -TypeName SLMCustomFieldDefinitionObject -Property $PSBoundParameters
@@ -990,7 +1005,7 @@ Function Get-SLMCustomFieldDefinitions {
     $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
 
     if ($ReturnSLMCustomFieldDefinitionObjects) {
-        Write-Verbose "Will return SLMCustomFieldDefinitionObjects"
+        Write-Information "Will return SLMCustomFieldDefinitionObjects"
         $SLMCustomFieldDefinitionObjects = @()
         foreach ($resultCustomFieldDefinition in $result) {
             $table = @{}
@@ -1012,7 +1027,7 @@ Function New-SLMCustomFieldValueObject {
         [String]$DataType,
         [String]$ElementId,
         [String]$Value,
-        [String]$UpdatedDate
+        [nullable[datetime]]$UpdatedDate
     )
 
     $SLMCustomFieldValueObject = New-Object -TypeName SLMCustomFieldValueObject -Property $PSBoundParameters
@@ -1033,7 +1048,7 @@ Function Get-SLMCustomFieldValues {
         [String]
         $Value,
 
-        [String]
+        [nullable[datetime]]
         $UpdatedDate
 
     )
@@ -1049,10 +1064,10 @@ Function New-SLMApplicationObject {
         [String]$ManufacturerName,
         [String]$ManufacturerWebsite,
         [String]$LanguageName,
-        [Nullable[DateTime]]$ReleaseDate,
-        [DateTime]$CreatedDate,
+        [nullable[datetime]]$ReleaseDate,
+        [nullable[datetime]]$CreatedDate,
         [String]$CreatedBy,
-        [DateTime]$UpdatedDate,
+        [nullable[datetime]]$UpdatedDate,
         [String]$UpdatedBy,
         [String]$Description,
         [String]$SystemOwnerName,
@@ -1163,7 +1178,7 @@ Function Get-SLMApplications {
     $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
 
     if ($ReturnSLMApplicationObjects) {
-        Write-Verbose "Will return SLMApplicationObjects"
+        Write-Information "Will return SLMApplicationObjects"
         $SLMApplicationObjects = @()
         foreach ($resultApplication in $result) {
             $table = @{}
@@ -1241,7 +1256,7 @@ Function Get-SLMApplicationDetails {
     $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
 
     if ($ReturnSLMApplicationObjects) {
-        Write-Verbose "Will return SLMApplicationObjects"
+        Write-Information "Will return SLMApplicationObjects"
         $SLMApplicationObjects = @()
         foreach ($resultApplication in $result) {
             $table = @{}
@@ -1287,7 +1302,115 @@ Function Get-SLMLicenseDetails {
     $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
 
     if ($ReturnAsSLMObject) {
-        Write-Verbose "Will return SLMLicenseObject"
+        Write-Information "Will return SLMLicenseObject"
+        $SLMObjects = @()
+        foreach ($resultRow in $result) {
+            $table = @{}
+            $resultRow.psobject.properties.name | ForEach-Object { $table.Add($_, $resultRow.$_) }
+            $SLMObjects += New-SLMLicenseObject @table
+        }
+        
+        return $SLMObjects
+
+    }
+    Write-Information "Will return data in format: $($SLMApiEndpointConfiguration.format)"
+    return $result
+
+}
+#Id	ApplicationName	ManufacturerName	Metric	AssignmentType	PurchaseDate	Quantity	IsIncomplete
+Function Get-SLMLicenses {
+    [CmdletBinding()]
+    param(
+        [hashtable]
+        $SLMApiEndpointConfiguration,
+        
+        [guid]
+        $Id,
+
+        [string]
+        $ApplicationName,
+
+        [string]
+        $ManufacturerName,
+
+        # [string]
+        # $Metric,
+
+        # [string]
+        # $AssignmentType,
+
+        # [string]
+        # $PurchaseDate,
+
+        
+        # [string]
+        # $Quantity,
+
+
+        # [string]
+        # $IsIncomplete,        
+        
+        # [string]
+        # $UpdatedDate,        
+
+        # [string]
+        # $UpdatedBy,        
+
+        [string]
+        $filter,
+
+        [switch]
+        $ReturnAsSLMObject,
+
+        [switch]
+        $IncludeDetails #TODO include details for all licenses
+    )
+
+    #Remove the reference of the variable to the original parameter.
+    $SLMApiEndpointConfiguration = $SLMApiEndpointConfiguration.Clone()
+    
+
+    #If filter is empty, build filterArray
+    if ([string]::IsNullOrEmpty($filter)) {
+
+        $filterArray = @()
+
+        if ($Id) {
+            $filterArray += "(Id eq $Id)"
+        }
+
+        if ($ApplicationName) {
+            $filterArray += "(ApplicationName eq '$ApplicationName')"
+        }
+        
+        if ($ManufacturerName) {
+            $filterArray += "(ManufacturerName eq '$ManufacturerName')"
+        }    
+    }
+
+    #Inform that if we have a filter, it will override all other parameters
+    if ($filter) {
+        Write-Information "Filter is set, all other parameters will be ignored."
+    }
+
+    #Check if we got a filterArray
+    if ($filterArray.Count -gt 0) {
+        $filter = $filterArray -join " and "
+    }
+
+    #Build splatting object
+    $SLMApiEndpointConfiguration.SLMEndpointPath = 'licenses'
+    $SLMApiEndpointConfiguration.filter = ''
+
+    if ($filter) {
+        $SLMApiEndpointConfiguration.filter = $filter
+        Write-Information "Filter will be used: [$filter]"
+    }
+
+    $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
+
+    if ($ReturnAsSLMObject) {
+        Write-Information "Will return SLMLicenseObject"
         $SLMObjects = @()
         foreach ($resultRow in $result) {
             $table = @{}
@@ -1308,13 +1431,14 @@ Function New-SLMLicenseObject {
         [String]$ApplicationName,
         [String]$ManufacturerName,
         [String]$Metric,
+        [ValidateSet('Organisation', 'Computer/datacenter', 'User', 'Site')]
         [String]$AssignmentType,
-        [String]$UpdatedDate,
+        [nullable[datetime]]$UpdatedDate,
         [String]$UpdatedBy,
         [nullable[Boolean]]$AutomaticDowngrade,
         [nullable[Boolean]]$UpgradeRights,
         [String]$InvoiceReference,
-        [String]$PurchaseDate,
+        [nullable[datetime]]$PurchaseDate,
         [nullable[decimal]]$PurchasePrice,
         [String]$PurchaseCurrency,
         [Int32]$Quantity,
@@ -1335,10 +1459,14 @@ Function New-SLMLicenseObject {
     return $SLMObject
 
 }
+Function New-ImportToolLicenseConfigurationXML {
+    
+}
 #endregion
 
 #region SLM Import Functions
 Function New-SLMImport {
+    [CmdletBinding()]
     param(
         $ImportObjects,
         $LicenseDirectoryPath,

@@ -1324,7 +1324,7 @@ Function Get-SLMLicenses {
         [hashtable]
         $SLMApiEndpointConfiguration,
         
-        [guid]
+        [Int32]
         $Id,
 
         [string]

@@ -1,5 +1,3 @@
-#Requires -Modules ImportExcel
-
 #region Enums
 enum SLMObjectTypes {
     SLMOrganisationObject
@@ -917,6 +915,9 @@ Function Get-SLMCustomFieldDefinitions {
         [string]
         $Name,
 
+        [string]
+        $Description,
+
         [int]
         $ValueDataTypeId,
 
@@ -936,7 +937,7 @@ Function Get-SLMCustomFieldDefinitions {
         $filter,
 
         [switch]
-        $ReturnSLMCustomFieldDefinitionObjects
+        $ReturnAsSLMObject
     )
     #Remove the reference of the variable to the original parameter.
     $SLMApiEndpointConfiguration = $SLMApiEndpointConfiguration.Clone()
@@ -952,6 +953,10 @@ Function Get-SLMCustomFieldDefinitions {
 
         if ($CategoryId) {
             $filterArray += "(CategoryId eq $CategoryId)"
+        }
+
+        if ($Description) {
+            $filterArray += "(Description eq '$Description')"
         }
 
         # 1 User
@@ -1004,18 +1009,21 @@ Function Get-SLMCustomFieldDefinitions {
 
     $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
 
-    if ($ReturnSLMCustomFieldDefinitionObjects) {
-        Write-Information "Will return SLMCustomFieldDefinitionObjects"
-        $SLMCustomFieldDefinitionObjects = @()
-        foreach ($resultCustomFieldDefinition in $result) {
+    if ($ReturnAsSLMObject) {
+        Write-Information "Will return SLMObject"
+        $SLMObjects = @()
+        foreach ($resultRow in $result) {
             $table = @{}
-            $resultCustomFieldDefinition.psobject.properties.name | ForEach-Object { $table.Add($_, $resultCustomFieldDefinition.$_) }
-            $SLMCustomFieldDefinitionObjects += New-SLMCustomFieldDefinitionObject @table
+            $resultRow.psobject.properties.name | ForEach-Object { $table.Add($_, $resultRow.$_) }
+
+            $SLMObjects += New-SLMCustomFieldDefinitionObject @table     
+
         }
         
-        return $SLMCustomFieldDefinitionObjects
+        return $SLMObjects
 
     }
+
     Write-Information "Will return data in format: $($SLMApiEndpointConfiguration.format)"
     return $result
 }
@@ -1038,7 +1046,8 @@ Function New-SLMCustomFieldValueObject {
 }
 Function Get-SLMCustomFieldValues {
     param(
-        
+        [hashtable]
+        $SLMApiEndpointConfiguration,
         [Int32]
         $CustomFieldId,
 
@@ -1048,10 +1057,94 @@ Function Get-SLMCustomFieldValues {
         [String]
         $Value,
 
-        [nullable[datetime]]
-        $UpdatedDate
+        [String]
+        $filter,
+
+        # [nullable[datetime]]
+        # $UpdatedDate,
+
+        # 1 User
+        # 2 Computer/Mobile device
+        # 3 License
+        # 4 Agreement
+        # 5 Application
+        [Validateset('User', 'Computer', 'License', 'Agreement', 'Application')]
+        [Parameter(Mandatory)]
+        [String]
+        $ObjectType,
+
+        [switch]
+        $ReturnAsSLMObject
 
     )
+
+    #Remove the reference of the variable to the original parameter.
+    $SLMApiEndpointConfiguration = $SLMApiEndpointConfiguration.Clone()
+
+    #If filter is empty, build filterArray
+    if ([string]::IsNullOrEmpty($filter)) {
+
+        $filterArray = @()
+
+        if ($CustomFieldId) {
+            $filterArray += "(CustomFieldId eq $CustomFieldId)"
+        }
+
+        if ($ElementId) {
+            $filterArray += "(ElementId eq '$ElementId')"
+        }    
+        if ($Value) {
+            $filterArray += "(Value eq '$Value')"
+        }    
+    }
+
+    #Inform that if we have a filter, it will override all other parameters
+    if ($filter) {
+        Write-Information "Filter is set, all other parameters will be ignored."
+    }
+
+    #Check if we got a filterArray
+    if ($filterArray.Count -gt 0) {
+        $filter = $filterArray -join " and "
+    }
+
+    #Build splatting object
+
+    switch ($ObjectType) {
+        User { $SLMApiEndpointConfiguration.SLMEndpointPath = 'sim/customfields/Users' }
+        Computer { $SLMApiEndpointConfiguration.SLMEndpointPath = 'sim/customfields/Computers' }
+        License { $SLMApiEndpointConfiguration.SLMEndpointPath = 'sim/customfields/Licenses' }
+        Agreement { $SLMApiEndpointConfiguration.SLMEndpointPath = 'sim/customfields/Agreements' }
+        Application { $SLMApiEndpointConfiguration.SLMEndpointPath = 'sim/customfields/Applications' }
+        Default {}
+    }
+
+    if ($filter) {
+        $SLMApiEndpointConfiguration.filter = $filter
+        Write-Information "Filter will be used: [$filter]"
+    }
+
+    $result = Get-SLMApiEndpoint @SLMApiEndpointConfiguration
+
+    if ($ReturnAsSLMObject) {
+        Write-Information "Will return SLMObject"
+        $SLMObjects = @()
+        foreach ($resultRow in $result) {
+            $table = @{}
+            $resultRow.psobject.properties.name | ForEach-Object { $table.Add($_, $resultRow.$_) }
+
+            $SLMObjects += New-SLMCustomFieldValueObject @table     
+
+        }
+        
+        return $SLMObjects
+
+    }
+    Write-Information "Will return data in format: $($SLMApiEndpointConfiguration.format)"
+    return $result
+
+
+
 
 }
 #endregion

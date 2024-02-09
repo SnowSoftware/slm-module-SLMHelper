@@ -198,7 +198,7 @@ Class SLMLicenseObject {
     [String]$ApplicationName
     [String]$ManufacturerName
     [String]$Metric
-    [ValidateSet('Organisation', 'Computer/datacenter', 'User', 'Site')]
+    [ValidateSet('Organisation', 'Computer', 'datacenter', 'User', 'Site')]
     [String]$AssignmentType
     [nullable[datetime]]$UpdatedDate
     [String]$UpdatedBy
@@ -1524,7 +1524,7 @@ Function New-SLMLicenseObject {
         [String]$ApplicationName,
         [String]$ManufacturerName,
         [String]$Metric,
-        [ValidateSet('Organisation', 'Computer/datacenter', 'User', 'Site')]
+        [ValidateSet('Organisation', 'Computer', 'datacenter', 'User', 'Site')]
         [String]$AssignmentType,
         [nullable[datetime]]$UpdatedDate,
         [String]$UpdatedBy,
